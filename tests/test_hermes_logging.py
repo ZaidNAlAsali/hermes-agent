@@ -552,7 +552,12 @@ class TestComponentFilter:
         assert f.filter(record) is True
 
     def test_passes_nested_matching_prefix(self):
-        f = hermes_logging._ComponentFilter(("gateway",))
+        # Migrated platform adapters log under plugins.platforms.* (#41112);
+        # the gateway component filter is built from COMPONENT_PREFIXES["gateway"]
+        # (which includes "plugins.platforms"), so such records pass.
+        f = hermes_logging._ComponentFilter(
+            hermes_logging.COMPONENT_PREFIXES["gateway"]
+        )
         record = logging.LogRecord(
             "plugins.platforms.telegram.adapter", logging.INFO, "", 0, "msg", (), None
         )

@@ -116,7 +116,17 @@ class TestLineMatchesComponent:
         assert _line_matches_component(line, ("gateway",))
 
     def test_gateway_nested(self):
+        # Migrated platform adapters log under plugins.platforms.* (#41112) and
+        # must still resolve to the gateway component. Use the real expanded
+        # gateway prefixes (COMPONENT_PREFIXES["gateway"]) the CLI passes, not a
+        # bare ("gateway",), since the logger name no longer literally starts
+        # with "gateway".
+        from hermes_logging import COMPONENT_PREFIXES
         line = "2026-04-11 10:23:45 INFO plugins.platforms.telegram.adapter: msg"
+        assert _line_matches_component(line, COMPONENT_PREFIXES["gateway"])
+
+    def test_gateway_core_nested(self):
+        line = "2026-04-11 10:23:45 INFO gateway.run: msg"
         assert _line_matches_component(line, ("gateway",))
 
     def test_tools_component(self):

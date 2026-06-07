@@ -6133,6 +6133,20 @@ def _build_adapter(config):
     return adapter
 
 
+def _is_connected(config) -> bool:
+    """Telegram is connected when a bot token is configured.
+
+    check_telegram_requirements() only verifies the python-telegram-bot SDK is
+    importable, NOT that a token is set — so without this is_connected the
+    registry-driven plugin-enable pass in gateway/config.py would enable
+    Telegram on any machine that merely has the SDK installed. Gate on the
+    token (env or PlatformConfig.token), matching the generic token check
+    Telegram had as a built-in.
+    """
+    token = getattr(config, "token", None) or os.getenv("TELEGRAM_BOT_TOKEN", "")
+    return bool(str(token).strip())
+
+
 async def _standalone_send(
     pconfig,
     chat_id,
@@ -6278,6 +6292,7 @@ def register(ctx) -> None:
         label="Telegram",
         adapter_factory=_build_adapter,
         check_fn=check_telegram_requirements,
+        is_connected=_is_connected,
         required_env=["TELEGRAM_BOT_TOKEN"],
         install_hint="pip install 'hermes-agent[telegram]'",
         setup_fn=interactive_setup,

@@ -930,7 +930,11 @@ def load_gateway_config() -> GatewayConfig:
                 plat_data, extra = _ensure_platform_extra_dict(platforms_data, plat.value)
                 if enabled_was_explicit:
                     plat_data["enabled"] = platform_cfg["enabled"]
-                if plat == Platform.SLACK and enabled_was_explicit:
+                    # Mark the explicit enable/disable so the registry-driven
+                    # plugin-enable pass in _apply_env_overrides honors an
+                    # explicit ``enabled: false`` for migrated plugin platforms
+                    # (slack, telegram, matrix, dingtalk, whatsapp, feishu …)
+                    # instead of re-enabling them on token/SDK presence. #41112.
                     extra["_enabled_explicit"] = True
                 extra.update(bridged)
 
@@ -1140,7 +1144,13 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
             return config.platforms[platform]
 
         platform_config = config.platforms[platform]
-        enabled_was_explicit = bool(platform_config.extra.pop("_enabled_explicit", False))
+        # Read (don't pop) the explicit-enable marker: the registry-driven
+        # plugin-enable pass later in this function also needs it to avoid
+        # re-enabling a platform the user explicitly disabled (migrated plugin
+        # platforms — telegram, matrix — flow through here too, #41112). The
+        # flag is cleared once for all platforms in the final cleanup at the
+        # end of _apply_env_overrides.
+        enabled_was_explicit = bool(platform_config.extra.get("_enabled_explicit", False))
         if not platform_config.enabled and not enabled_was_explicit:
             platform_config.enabled = True
         return platform_config
@@ -1764,6 +1774,19 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
                 continue
             platform = Platform(entry.name)
             existing_cfg = config.platforms.get(platform)
+            # Respect an explicit ``enabled: false`` (YAML / gateway.json /
+            # dashboard PUT).  ``_enabled_explicit`` is set in
+            # load_gateway_config() (via _merge_platform_map / the shared-key
+            # loop) when the user wrote ``enabled`` for this platform; if they
+            # explicitly disabled it, never re-enable here just because
+            # check_fn() / is_connected() pass (e.g. a token is present but the
+            # user set telegram.enabled: false). #41112.
+            if (
+                existing_cfg is not None
+                and not existing_cfg.enabled
+                and bool((existing_cfg.extra or {}).get("_enabled_explicit", False))
+            ):
+                continue
             # Seed candidate extras from ``env_enablement_fn`` so plugins
             # whose ``is_connected`` reads ``config.extra`` (e.g. Google
             # Chat's ``_is_connected`` checks ``config.extra["project_id"]``)
