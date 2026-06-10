@@ -12,7 +12,6 @@
 import { createCliRenderer, type CliRenderer, type KeyEvent, type Selection } from '@opentui/core'
 import { Deferred, Effect } from 'effect'
 
-import { DEFAULT_THEME } from '../logic/theme.ts'
 import { RendererError } from './errors.ts'
 import { installFfiCoordSafety } from './ffiSafe.ts'
 import { getLog } from './log.ts'
@@ -67,10 +66,10 @@ export const acquireRenderer = Effect.fn('Renderer.acquire')(function* (options:
     Effect.tryPromise({
       try: () =>
         createCliRenderer({
-          // Root canvas (design pass): paint the dark room from the first frame
-          // — true black by default. Skin overrides land reactively via the
-          // header's theme effect (view/header.tsx setBackgroundColor).
-          backgroundColor: DEFAULT_THEME.color.bg,
+          // Root canvas: TRANSPARENT by default — the terminal's own background
+          // shows through (do not paint a "default dark" canvas; glitch hated
+          // it). A skin's explicit ui_bg lands reactively via the header's
+          // theme effect (view/header.tsx setBackgroundColor).
           // scrollbox clips growing output → no terminal-scrollback corruption (gotcha §8 #2).
           externalOutputMode: 'passthrough',
           targetFps: 60,

@@ -24,6 +24,9 @@ export function Header(props: { store: SessionStore }) {
   // Root canvas paint — best-effort (a styling miss must never crash chrome).
   createEffect(() => {
     const bg = theme().color.bg
+    // Default is `transparent` = leave the terminal's background alone; only a
+    // skin's explicit ui_bg paints the canvas.
+    if (bg === 'transparent') return
     try {
       renderer.setBackgroundColor(bg)
     } catch {

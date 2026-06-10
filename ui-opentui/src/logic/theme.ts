@@ -12,6 +12,12 @@
  *
  * Source of truth for the contract: ui-tui/src/theme.ts (+ GatewaySkin in
  * ui-tui/src/gatewayTypes.ts). Keep this port in sync if that contract changes.
+ *
+ * INTENTIONAL divergences from the Ink port (visual-hierarchy design pass):
+ *   - `muted` is a true NEUTRAL grey (not a darker gold) and no longer borrows
+ *     the skin's `banner_dim` (a banner-gold shade in the stock skin); skins
+ *     override it via the dedicated `ui_muted` key instead.
+ *   - a `bg` token paints the root canvas (true black/white; `ui_bg` override).
  */
 
 import { FALSE_RE, TRUE_RE } from './env.ts'
@@ -22,9 +28,10 @@ export interface ThemeColors {
   border: string
   text: string
   muted: string
-  /** Root canvas background (design pass: the view is a dark room — true black
-   *  by default; skins may override via `ui_bg`). CSS names are valid OpenTUI
-   *  ColorInput, so the defaults use `black`/`white`, not invented hexes. */
+  /** Root canvas background. DEFAULT IS `transparent` — the terminal's own
+   *  background shows through (glitch rejected a painted "default dark" canvas;
+   *  the dark room is the user's terminal, not ours). Skins may opt into a
+   *  painted canvas via `ui_bg`. */
   bg: string
   completionBg: string
   completionCurrentBg: string
@@ -262,7 +269,7 @@ export const DARK_THEME: Theme = {
     // step, CSS `gray` — no invented hexes. Grey = everything that merely
     // happened; gold stays earned.
     muted: '#808080',
-    bg: 'black',
+    bg: 'transparent',
     completionBg: '#1a1a2e',
     completionCurrentBg: '#333355',
     completionMetaBg: '#1a1a2e',
@@ -308,7 +315,7 @@ export const LIGHT_THEME: Theme = {
     // same disease as dark: muted was `#7A5A0F` (gold-brown). True neutral —
     // the statusFg `#333333` family's lighter step, CSS `dimgray`.
     muted: '#696969',
-    bg: 'white',
+    bg: 'transparent',
     completionBg: '#F5F5F5',
     completionCurrentBg: mix('#F5F5F5', '#A0651C', 0.25),
     completionMetaBg: '#F5F5F5',
@@ -445,7 +452,13 @@ export function fromSkin(
 
   const accent = c('ui_accent') ?? c('banner_accent') ?? d.color.accent
   const bannerAccent = c('banner_accent') ?? c('banner_title') ?? d.color.accent
-  const muted = c('banner_dim') ?? d.color.muted
+  // Design pass (Appendix C precondition): `muted` is the transcript's "merely
+  // happened" NEUTRAL — it must NOT borrow `banner_dim` (the stock skin's dim
+  // GOLD banner shade; the Ink engine still uses it for its banner-tinted dim).
+  // Borrowing it re-golded every dim surface in the live app and made the hero
+  // color the wallpaper. Skins that want a custom transcript dim ship the
+  // dedicated `ui_muted` key; everything else gets the theme's true neutral.
+  const muted = c('ui_muted') ?? d.color.muted
   const completionBg = c('completion_menu_bg') ?? d.color.completionBg
 
   const completionCurrentBg =

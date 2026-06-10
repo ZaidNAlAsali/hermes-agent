@@ -50,9 +50,9 @@ describe('theme — muted is a true neutral, not darker gold (design-pass precon
     expect(isAchromatic(DARK_THEME.color.sessionBorder)).toBe(true)
   })
 
-  test('bg token: true black (dark) / white (light) by CSS name', () => {
-    expect(DARK_THEME.color.bg).toBe('black')
-    expect(LIGHT_THEME.color.bg).toBe('white')
+  test('bg token: TRANSPARENT by default — the terminal owns the canvas (glitch decision)', () => {
+    expect(DARK_THEME.color.bg).toBe('transparent')
+    expect(LIGHT_THEME.color.bg).toBe('transparent')
   })
 
   test('fromSkin: skins may override bg via ui_bg; default stays the theme bg', () => {
@@ -60,8 +60,14 @@ describe('theme — muted is a true neutral, not darker gold (design-pass precon
     expect(fromSkin({}, {}).color.bg).toBe(DARK_THEME.color.bg)
   })
 
-  test('skin mapping intact: banner_dim still re-points muted (skins keep their dim)', () => {
-    expect(fromSkin({ banner_dim: '#445566' }, {}).color.muted).toBe('#445566')
+  test('muted no longer borrows banner_dim (the stock skin ships GOLD there — the live re-gold bug)', () => {
+    // The default Hermes skin sends banner_dim '#B8860B'; borrowing it for
+    // muted re-golded every dim surface in the live app. It must stay neutral.
+    expect(fromSkin({ banner_dim: '#B8860B' }, {}).color.muted).toBe(DARK_THEME.color.muted)
+  })
+
+  test('skins keep a dedicated transcript-dim override: ui_muted', () => {
+    expect(fromSkin({ ui_muted: '#445566' }, {}).color.muted).toBe('#445566')
   })
 })
 
