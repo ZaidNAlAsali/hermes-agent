@@ -74,7 +74,6 @@ export function AgentsTray(props: {
   /** Receives the focus-handoff API once (the App wires it to the composer's Down). */
   bind?: ((api: AgentsTrayApi) => void) | undefined
 }) {
-  const theme = useTheme()
   const running = createMemo(() => props.subagents.filter(isTrayAgent))
   const [focused, setFocused] = createSignal(false)
   const [sel, setSel] = createSignal(0)
@@ -140,17 +139,14 @@ export function AgentsTray(props: {
     }
   })
 
+  // Collapsed = NOTHING under the composer (P4 input-density fold, glitch
+  // 2026-06-13): the running count moved to the status bar's `⚡ N` chip, so the
+  // tray no longer keeps a persistent line here. The box stays mounted + focusable
+  // so composer-Down still hands focus over and EXPANDS it into the rows.
   return (
     <Show when={running().length > 0}>
       <box ref={attach} focusable style={{ flexDirection: 'column', flexShrink: 0 }}>
-        <Show
-          when={focused()}
-          fallback={
-            <text selectable={false} fg={theme().color.muted}>
-              {`⚡ ${running().length} agent${running().length === 1 ? '' : 's'} running — ↓ to inspect`}
-            </text>
-          }
-        >
+        <Show when={focused()}>
           <TrayRows agents={running()} selected={selected()} firstSeen={firstSeen} />
         </Show>
       </box>

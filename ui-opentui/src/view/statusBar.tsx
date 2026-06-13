@@ -43,6 +43,7 @@ import { createEffect, createMemo, createSignal, onCleanup, Show } from 'solid-j
 
 import { runningCount } from '../logic/backgroundActivity.ts'
 import type { SessionStore } from '../logic/store.ts'
+import { isTrayAgent } from './agentsTray.tsx'
 import { useDimensions } from './dimensions.tsx'
 import { elapsedSeconds, useElapsedTick } from './elapsed.ts'
 import { useTheme } from './theme.tsx'
@@ -265,6 +266,13 @@ export function StatusBar(props: { store: SessionStore }) {
     const n = runningCount([], props.store.state.backgroundProcesses)
     return segs().bg && n > 0 ? `bg: ${n}` : ''
   })
+  // `⚡ N` — running subagents. The ambient count lives HERE now (P4 input-density
+  // fold): the agents tray no longer keeps a persistent collapsed line under the
+  // composer — Down still expands it; this chip is the at-a-glance signal.
+  const agentsText = createMemo(() => {
+    const n = props.store.state.subagents.filter(isTrayAgent).length
+    return n > 0 && dims().width >= 60 ? `⚡ ${n}` : ''
+  })
 
   // The cwd flows LAST on the same line (not right-pinned): its budget is the
   // row width minus every segment before it; it tail-truncates into that, and
@@ -272,7 +280,7 @@ export function StatusBar(props: { store: SessionStore }) {
   const leftLen = createMemo(() => {
     let len = 1 // dot
     if (model()) len += 1 + model().length + effort().length
-    for (const seg of [ctxText(), costText(), upText(), cmpText(), profileText(), bgText(), mcpText()]) {
+    for (const seg of [agentsText(), ctxText(), costText(), upText(), cmpText(), profileText(), bgText(), mcpText()]) {
       if (seg) len += SEP.length + seg.length
     }
     return len
@@ -329,6 +337,7 @@ export function StatusBar(props: { store: SessionStore }) {
             <span style={{ fg: theme().color.statusFg }}>{` ${model()}`}</span>
             <span style={{ fg: theme().color.muted }}>{effort()}</span>
           </Show>
+          <Seg text={agentsText()} fg={theme().color.accent} />
           <Show when={ctxText()}>
             <span style={{ fg: theme().color.border }}>{SEP}</span>
             <span style={{ fg: theme().color.muted }}>{'ctx: '}</span>

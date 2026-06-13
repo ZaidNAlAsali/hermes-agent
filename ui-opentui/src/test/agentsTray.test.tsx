@@ -25,7 +25,6 @@ import { isTrayAgent } from '../view/agentsTray.tsx'
 import { ThemeProvider } from '../view/theme.tsx'
 import { renderProbe, type RenderProbe } from './lib/render.ts'
 
-const INDICATOR = 'running — ↓ to inspect'
 const EXPANDED_HINT = 'Enter inspect'
 
 /** Fake gateway catalog (what `complete.slash` would return for a `/` prefix). */
@@ -95,19 +94,19 @@ describe('agents tray — visibility', () => {
   test('0 running agents → the tray renders nothing', async () => {
     const h = await mountApp()
     try {
-      expect(h.probe.frame()).not.toContain(INDICATOR)
+      expect(h.probe.frame()).not.toContain('⚡')
     } finally {
       h.probe.destroy()
     }
   })
 
-  test('2 running agents → a one-line indicator with the count', async () => {
+  test('2 running agents → a ⚡ chip in the status bar (no persistent tray line)', async () => {
     const h = await mountApp()
     try {
       spawn(h.store, 'a1', 'research X')
       spawn(h.store, 'a2', 'compile Y')
-      const frame = await h.probe.waitForFrame(f => f.includes(INDICATOR))
-      expect(frame).toContain(`⚡ 2 agents ${INDICATOR}`)
+      const frame = await h.probe.waitForFrame(f => f.includes('⚡'))
+      expect(frame).toContain(`⚡ 2`)
       expect(frame).not.toContain(EXPANDED_HINT) // collapsed until focused
     } finally {
       h.probe.destroy()
@@ -119,12 +118,12 @@ describe('agents tray — visibility', () => {
     try {
       spawn(h.store, 'a1', 'research X')
       spawn(h.store, 'a2', 'compile Y')
-      await h.probe.waitForFrame(f => f.includes('⚡ 2 agents'))
+      await h.probe.waitForFrame(f => f.includes('⚡ 2'))
       complete(h.store, 'a1')
-      const one = await h.probe.waitForFrame(f => f.includes('⚡ 1 agent '))
-      expect(one).toContain(`⚡ 1 agent ${INDICATOR}`)
+      const one = await h.probe.waitForFrame(f => f.includes('⚡ 1'))
+      expect(one).toContain(`⚡ 1`)
       complete(h.store, 'a2')
-      const none = await h.probe.waitForFrame(f => !f.includes(INDICATOR))
+      const none = await h.probe.waitForFrame(f => !f.includes('⚡'))
       expect(none).not.toContain('⚡')
     } finally {
       h.probe.destroy()
@@ -138,7 +137,7 @@ describe('agents tray — Down-arrow focus routing', () => {
     try {
       spawn(h.store, 'a1', 'research X')
       spawn(h.store, 'a2', 'compile Y')
-      await h.probe.waitForFrame(f => f.includes(INDICATOR))
+      await h.probe.waitForFrame(f => f.includes('⚡'))
       h.probe.keys.pressArrow('down')
       const frame = await h.probe.waitForFrame(f => f.includes(EXPANDED_HINT))
       // rows show goal + status, with the first row selected
@@ -146,7 +145,7 @@ describe('agents tray — Down-arrow focus routing', () => {
       expect(frame).toContain('compile Y')
       expect(frame).toContain('● running')
       expect(frame).toMatch(/▸ ● running\s+research X/)
-      expect(frame).not.toContain(INDICATOR) // collapsed line replaced by rows
+      expect(frame).not.toContain('↓ to inspect') // the old persistent tray hint is gone (folded to the status bar)
     } finally {
       h.probe.destroy()
     }
@@ -156,7 +155,7 @@ describe('agents tray — Down-arrow focus routing', () => {
     const h = await mountApp()
     try {
       spawn(h.store, 'a1', 'research X')
-      await h.probe.waitForFrame(f => f.includes(INDICATOR))
+      await h.probe.waitForFrame(f => f.includes('⚡'))
       await h.probe.keys.typeText('hello')
       await h.probe.settle()
       h.probe.keys.pressArrow('down')
@@ -164,7 +163,7 @@ describe('agents tray — Down-arrow focus routing', () => {
       const frame = h.probe.frame()
       expect(frame).toContain('hello') // text untouched
       expect(frame).not.toContain(EXPANDED_HINT)
-      expect(frame).toContain(INDICATOR) // still just the indicator
+      expect(frame).toContain('⚡') // still just the indicator
     } finally {
       h.probe.destroy()
     }
@@ -174,7 +173,7 @@ describe('agents tray — Down-arrow focus routing', () => {
     const h = await mountApp()
     try {
       spawn(h.store, 'a1', 'research X')
-      await h.probe.waitForFrame(f => f.includes(INDICATOR))
+      await h.probe.waitForFrame(f => f.includes('⚡'))
       await h.probe.keys.typeText('/c')
       await h.probe.settle()
       await h.probe.waitForFrame(f => f.includes('/copy'))
@@ -210,12 +209,12 @@ describe('agents tray — Down-arrow focus routing', () => {
     const h = await mountApp()
     try {
       spawn(h.store, 'a1', 'research X')
-      await h.probe.waitForFrame(f => f.includes(INDICATOR))
+      await h.probe.waitForFrame(f => f.includes('⚡'))
       h.probe.keys.pressArrow('down')
       await h.probe.waitForFrame(f => f.includes(EXPANDED_HINT))
       h.probe.keys.pressEscape()
       const frame = await h.probe.waitForFrame(f => !f.includes(EXPANDED_HINT))
-      expect(frame).toContain(INDICATOR) // back to the collapsed line
+      expect(frame).toContain('⚡') // back to the collapsed line
       await h.probe.keys.typeText('hi') // composer has focus again
       await h.probe.settle()
       expect(h.probe.frame()).toContain('hi')
@@ -228,12 +227,12 @@ describe('agents tray — Down-arrow focus routing', () => {
     const h = await mountApp()
     try {
       spawn(h.store, 'a1', 'research X')
-      await h.probe.waitForFrame(f => f.includes(INDICATOR))
+      await h.probe.waitForFrame(f => f.includes('⚡'))
       h.probe.keys.pressArrow('down')
       await h.probe.waitForFrame(f => f.includes(EXPANDED_HINT))
       await h.probe.keys.typeText('x')
       const frame = await h.probe.waitForFrame(f => !f.includes(EXPANDED_HINT))
-      expect(frame).toContain(INDICATOR) // tray collapsed (textarea reclaimed focus)
+      expect(frame).toContain('⚡') // tray collapsed (textarea reclaimed focus)
       expect(frame).toContain('x') // …and the char landed in the composer
     } finally {
       h.probe.destroy()
@@ -247,7 +246,7 @@ describe('agents tray — Enter opens the dashboard preselected', () => {
     try {
       spawn(h.store, 'a1', 'research X')
       spawn(h.store, 'a2', 'compile Y')
-      await h.probe.waitForFrame(f => f.includes(INDICATOR))
+      await h.probe.waitForFrame(f => f.includes('⚡'))
       h.probe.keys.pressArrow('down') // focus the tray (row 0)
       await h.probe.waitForFrame(f => f.includes(EXPANDED_HINT))
       h.probe.keys.pressArrow('down') // select row 1 (compile Y)
