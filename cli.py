@@ -4234,7 +4234,19 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         self._pet_event = ""
         from agent.pet.state import derive_pet_state
 
+        # A live blocking modal (approval / clarify / sudo / secret / slash
+        # confirm) means the agent is paused on the user → the `waiting` pose,
+        # which outranks the in-flight signals in derive_pet_state.
+        awaiting_input = bool(
+            self._approval_state
+            or self._clarify_state
+            or self._sudo_state
+            or self._secret_state
+            or getattr(self, "_slash_confirm_state", None)
+        )
+
         return derive_pet_state(
+            awaiting_input=awaiting_input,
             busy=getattr(self, "_agent_running", False),
             reasoning=self._pet_reasoning,
         ).value

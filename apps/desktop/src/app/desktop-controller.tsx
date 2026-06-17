@@ -38,6 +38,7 @@ import {
   unpinSession
 } from '../store/layout'
 import { respondToApprovalAction } from '../store/native-notifications'
+import { setPetActivity } from '../store/pet'
 import { setPetOverlayOpenAppHandler, setPetOverlaySubmitHandler } from '../store/pet-overlay'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import {
@@ -50,6 +51,7 @@ import {
 } from '../store/profile'
 import {
   $activeSessionId,
+  $attentionSessionIds,
   $currentCwd,
   $freshDraftReady,
   $gatewayState,
@@ -820,6 +822,18 @@ export function DesktopController() {
       setPetOverlaySubmitHandler(null)
       setPetOverlayOpenAppHandler(null)
     }
+  }, [])
+
+  // Mirror "a session is blocked on the user" (clarify/approval) into the pet's
+  // awaitingInput flag so it shows the `waiting` pose. Lives on $petActivity so
+  // it rides the same atom the pop-out overlay mirrors — no session list needed
+  // there. Every window keeps its own in-window pet in sync.
+  useEffect(() => {
+    const sync = () => setPetActivity({ awaitingInput: $attentionSessionIds.get().length > 0 })
+
+    sync()
+
+    return $attentionSessionIds.listen(sync)
   }, [])
 
   useGatewayBoot({

@@ -59,6 +59,12 @@ def _make_cli():
     cli_obj._pet_event = ""
     cli_obj._pet_event_until = 0.0
     cli_obj._pet_reasoning = False
+    # Blocking-modal state — a live one maps the pet to `waiting`.
+    cli_obj._approval_state = None
+    cli_obj._clarify_state = None
+    cli_obj._sudo_state = None
+    cli_obj._secret_state = None
+    cli_obj._slash_confirm_state = None
     return cli_obj
 
 
@@ -67,6 +73,15 @@ def test_pet_state_tracks_agent_running():
     assert cli_obj._derive_pet_state() == "idle"
     cli_obj._agent_running = True
     assert cli_obj._derive_pet_state() == "run"
+
+
+def test_pet_state_waits_on_a_blocking_modal():
+    # A live clarify/approval pauses the agent on the user → `waiting`, even
+    # while the turn is technically still running.
+    cli_obj = _make_cli()
+    cli_obj._agent_running = True
+    cli_obj._clarify_state = {"question": "?"}
+    assert cli_obj._derive_pet_state() == "waiting"
 
 
 def test_pet_pane_collapsed_when_disabled():

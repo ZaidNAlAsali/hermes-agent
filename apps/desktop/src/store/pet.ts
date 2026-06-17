@@ -1,6 +1,6 @@
 import { atom, computed } from 'nanostores'
 
-import { $awaitingResponse, $busy } from '@/store/session'
+import { $busy } from '@/store/session'
 
 /**
  * Petdex mascot state for the desktop floating pet.
@@ -45,7 +45,9 @@ export interface PetActivity {
  * Resolve the animation state from coarse activity signals.
  *
  * Priority (highest first) mirrors `agent.pet.state.derive_pet_state`:
- * error → celebrate → justCompleted → toolRunning → reasoning → busy → awaitingInput → idle.
+ * error → celebrate → justCompleted → awaitingInput → toolRunning → reasoning →
+ * busy → idle. `awaitingInput` (a clarify/approval blocking on the user) outranks
+ * the in-flight signals because the turn is paused on you, not working.
  */
 export function derivePetState(activity: PetActivity): PetState {
   if (activity.error) {
@@ -60,6 +62,10 @@ export function derivePetState(activity: PetActivity): PetState {
     return 'wave'
   }
 
+  if (activity.awaitingInput) {
+    return 'waiting'
+  }
+
   if (activity.toolRunning) {
     return 'run'
   }
@@ -70,10 +76,6 @@ export function derivePetState(activity: PetActivity): PetState {
 
   if (activity.busy) {
     return 'run'
-  }
-
-  if (activity.awaitingInput) {
-    return 'waiting'
   }
 
   return 'idle'
@@ -117,19 +119,22 @@ export const flashPetActivity = (next: Partial<PetActivity>, ms = 1600) => {
 export const setPetInfo = (info: PetInfo) => $petInfo.set(info)
 
 /**
- * The live pet state. Derives from the dedicated activity atom when any of its
- * richer flags are set, otherwise falls back to the always-present chat
- * signals (`$busy` / `$awaitingResponse`) so the pet reacts out of the box
- * even before deeper tool/error wiring is added.
+ * The live pet state. Derives from the dedicated activity atom, falling back to
+ * the always-present `$busy` chat signal so the pet reacts out of the box.
+ *
+ * `awaitingInput` (a clarify/approval blocking on the user) is an explicit flag
+ * on `$petActivity` — set by the controller from `$attentionSessionIds` and
+ * mirrored to the pop-out overlay through the same atom, so both surfaces agree
+ * without the overlay needing the session list.
  */
 export const $petState = computed(
-  [$petActivity, $busy, $awaitingResponse],
-  (activity, busy, awaiting): PetState => {
+  [$petActivity, $busy],
+  (activity, busy): PetState => {
     const live = activity.busy ?? busy
 
     return derivePetState({
       busy: live,
-      awaitingInput: activity.awaitingInput ?? awaiting,
+      awaitingInput: activity.awaitingInput,
       // Steady flags only count mid-turn — ignore stale ones once at rest so an
       // interrupted turn can't pin the pet on `run`/`review`.
       toolRunning: live && activity.toolRunning,

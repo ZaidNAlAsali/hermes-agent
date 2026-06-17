@@ -19,6 +19,12 @@ describe('derivePetState', () => {
     expect(derivePetState({ reasoning: true, toolRunning: true })).toBe('run')
   })
 
+  it('waits (blocked on the user) above the in-flight signals', () => {
+    expect(derivePetState({ awaitingInput: true, toolRunning: true, busy: true })).toBe('waiting')
+    // but a finish beat still wins over waiting
+    expect(derivePetState({ justCompleted: true, awaitingInput: true })).toBe('wave')
+  })
+
   it('honors the full priority chain: error > celebrate > complete > tool', () => {
     expect(derivePetState({ error: true, celebrate: true, busy: true })).toBe('failed')
     expect(derivePetState({ celebrate: true, justCompleted: true, toolRunning: true })).toBe('jump')

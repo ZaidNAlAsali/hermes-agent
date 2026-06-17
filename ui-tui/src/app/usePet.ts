@@ -4,23 +4,31 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PetGrid } from '../components/petSprite.js'
 
 import { useGateway } from './gatewayContext.js'
+import { getOverlayState, $overlayState } from './overlayStore.js'
 import { $petFlash } from './petFlashStore.js'
 import { $turnState } from './turnStore.js'
 import { $uiState } from './uiStore.js'
 
-export type PetState = 'idle' | 'wave' | 'run' | 'failed' | 'review' | 'jump'
+export type PetState = 'idle' | 'wave' | 'run' | 'failed' | 'review' | 'jump' | 'waiting'
 
 interface PetActivity {
   busy: boolean
   toolRunning: boolean
   reasoning: boolean
+  awaitingInput: boolean
 }
 
 /**
  * Resolve the animation state — mirrors `agent.pet.state.derive_pet_state`
- * (and the desktop's `derivePetState`) so all surfaces agree.
+ * (and the desktop's `derivePetState`) so all surfaces agree. `awaitingInput`
+ * (a clarify/approval blocking on the user) outranks the in-flight signals
+ * because the turn is paused on you, not working.
  */
-export function derivePetState({ busy, toolRunning, reasoning }: PetActivity): PetState {
+export function derivePetState({ busy, toolRunning, reasoning, awaitingInput }: PetActivity): PetState {
+  if (awaitingInput) {
+    return 'waiting'
+  }
+
   if (toolRunning) {
     return 'run'
   }
@@ -34,6 +42,14 @@ export function derivePetState({ busy, toolRunning, reasoning }: PetActivity): P
   }
 
   return 'idle'
+}
+
+// The overlays that mean "the agent is blocked on the user" (vs. user-toggled
+// pickers like model/sessions, which aren't the agent waiting).
+function isAwaitingInput(): boolean {
+  const o = getOverlayState()
+
+  return Boolean(o.clarify || o.approval || o.sudo || o.secret || o.confirm)
 }
 
 // A kitty Unicode-placeholder frame set: a static placeholder grid (painted by
@@ -135,19 +151,28 @@ export function usePet(): PetRender {
       const turn = $turnState.get()
       const ui = $uiState.get()
 
-      apply(derivePetState({ busy: ui.busy, toolRunning: turn.tools.length > 0, reasoning: turn.reasoningActive }))
+      apply(
+        derivePetState({
+          awaitingInput: isAwaitingInput(),
+          busy: ui.busy,
+          reasoning: turn.reasoningActive,
+          toolRunning: turn.tools.length > 0
+        })
+      )
     }
 
     recompute()
     const unsubTurn = $turnState.listen(recompute)
     const unsubUi = $uiState.listen(recompute)
     const unsubFlash = $petFlash.listen(recompute)
+    const unsubOverlay = $overlayState.listen(recompute)
 
     return () => {
       clearTimeout(expiry)
       unsubTurn()
       unsubUi()
       unsubFlash()
+      unsubOverlay()
     }
   }, [])
 

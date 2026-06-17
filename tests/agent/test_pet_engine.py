@@ -30,8 +30,11 @@ def test_derive_priority_order():
     assert state.derive_pet_state(error=True, celebrate=True, busy=True) is PetState.FAILED
     # celebrate beats completion/tool
     assert state.derive_pet_state(celebrate=True, just_completed=True, tool_running=True) is PetState.JUMP
-    # completion beats tool/reasoning
-    assert state.derive_pet_state(just_completed=True, tool_running=True) is PetState.WAVE
+    # completion beats waiting/tool
+    assert state.derive_pet_state(just_completed=True, awaiting_input=True) is PetState.WAVE
+    # waiting (blocked on the user) outranks the in-flight signals — a clarify
+    # mid-turn pauses on you even though a tool is technically still open.
+    assert state.derive_pet_state(awaiting_input=True, tool_running=True, busy=True) is PetState.WAITING
     # tool beats reasoning
     assert state.derive_pet_state(tool_running=True, reasoning=True) is PetState.RUN
     # reasoning beats bare-busy

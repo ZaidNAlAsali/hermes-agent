@@ -34,7 +34,7 @@ the agent's behavior** — the sprite is a display concern only. The feature is
   | A tool is executing | `run` |
   | The model is thinking/reading | `review` |
   | Turn in flight (unspecified) | `run` |
-  | Waiting on you | `waiting` (falls back to `idle` on legacy sheets) |
+  | Blocked on you (a clarify/approval prompt is open) | `waiting` (falls back to `idle` on legacy 8-row sheets) |
   | Nothing happening | `idle` |
 
 ## Rendering
