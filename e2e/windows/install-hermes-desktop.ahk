@@ -48,9 +48,9 @@ try {
     FileAppend("ERROR: Hermes installer window did not appear within 30s`n", logPath)
     ExitApp(1)
 }
-ToolTip("Installer window appeared. Sleeping for a few seconds.....")
 WinGetPos(&x, &y, &w, &h, winTitle)
 FileAppend(Format("Window found at x={1} y={2} w={3} h={4}`n", x, y, w, h), logPath)
+ToolTip(Format(""Installer window appeared at x={1} y={2} w={3} h={4}. Sleeping for a few seconds.....", x, y, w, h))
 
 Sleep(3000)
 
