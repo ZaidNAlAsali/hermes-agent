@@ -1489,12 +1489,16 @@ def resolve_provider(
     """
     Determine which inference provider to use.
 
-    Priority (when requested="auto" or None):
-    1. active_provider in auth.json with valid credentials
-    2. Explicit CLI api_key/base_url -> "openrouter"
-    3. OPENAI_API_KEY or OPENROUTER_API_KEY env vars -> "openrouter"
-    4. Provider-specific API keys (GLM, Kimi, MiniMax) -> that provider
-    5. Fallback: "openrouter"
+    Priority (when requested="auto" or None) — explicit user intent wins over a
+    stale logged-in OAuth provider (#29285):
+    1. Explicit CLI api_key/base_url -> "openrouter"
+    2. config.yaml `model.provider`
+    3. OPENAI_API_KEY / OPENROUTER_API_KEY env vars -> "openrouter"
+    4. OpenRouter credential pool
+    5. Provider-specific API keys (GLM, Kimi, MiniMax, ...) -> that provider
+    6. auth.json `active_provider` (logged-in OAuth) — last-resort fallback
+    7. AWS Bedrock credential chain
+    8. Error (no provider configured)
     """
     normalized = (requested or "auto").strip().lower()
 
@@ -1566,16 +1570,25 @@ def resolve_provider(
     if explicit_api_key or explicit_base_url:
         return "openrouter"
 
-    # Check auth store for an active OAuth provider
+    # Provider precedence for the auto-path (#29285): explicit user intent must
+    # win over a stale logged-in OAuth `active_provider`. Order:
+    #   1. config.yaml `model.provider`  2. env-var API keys  3. OpenRouter pool
+    #   4. auth.json `active_provider` (OAuth)  5. Bedrock  6. error.
+    # The normal chat/gateway path resolves config.provider upstream in
+    # resolve_requested_provider() before ever reaching "auto"; this duplicate
+    # check is the safety net for the lone direct caller (main.py resolve_provider
+    # ("auto")) and any future bypass of that stage.
+    _model_cfg: Any = None
     try:
-        auth_store = _load_auth_store()
-        active = auth_store.get("active_provider")
-        if active and active in PROVIDER_REGISTRY:
-            status = get_auth_status(active)
-            if status.get("logged_in"):
-                return active
+        from hermes_cli.config import load_config
+
+        _model_cfg = (load_config() or {}).get("model")
+        if isinstance(_model_cfg, dict):
+            _cfg_provider = _model_cfg.get("provider")
+            if isinstance(_cfg_provider, str) and _cfg_provider.strip().lower() in PROVIDER_REGISTRY:
+                return _cfg_provider.strip().lower()
     except Exception as e:
-        logger.debug("Could not detect active auth provider: %s", e)
+        logger.debug("Could not read config.yaml model.provider for auto-resolution: %s", e)
 
     if has_usable_secret(os.getenv("OPENAI_API_KEY")) or has_usable_secret(os.getenv("OPENROUTER_API_KEY")):
         return "openrouter"
@@ -1610,6 +1623,30 @@ def resolve_provider(
         for env_var in pconfig.api_key_env_vars:
             if has_usable_secret(os.getenv(env_var, "")):
                 return pid
+
+    # Logged-in OAuth provider (auth.json `active_provider`) — a LAST-RESORT
+    # fallback, chosen only when the user expressed no other preference above.
+    # Previously this sat ABOVE the env-var/config checks, so a stale OAuth
+    # login silently overrode an explicit `model.provider` or an exported API
+    # key (#29285). Demoted here so explicit intent always wins.
+    try:
+        auth_store = _load_auth_store()
+        active = auth_store.get("active_provider")
+        if active and active in PROVIDER_REGISTRY:
+            status = get_auth_status(active)
+            if status.get("logged_in"):
+                # Surface the silent-override case the issue reported: a populated
+                # `model` config that lacks a `provider` key falls through to OAuth.
+                if isinstance(_model_cfg, dict) and _model_cfg and not _model_cfg.get("provider"):
+                    logger.warning(
+                        "Provider resolved to logged-in OAuth provider %r because "
+                        "config.yaml `model` has no `provider` key. If you meant a "
+                        "different provider, set `model.provider` explicitly.",
+                        active,
+                    )
+                return active
+    except Exception as e:
+        logger.debug("Could not detect active auth provider: %s", e)
 
     # AWS Bedrock — detect via boto3 credential chain (IAM roles, SSO, env vars).
     # This runs after API-key providers so explicit keys always win.
