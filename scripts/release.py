@@ -1473,6 +1473,7 @@ AUTHOR_MAP = {
     "258858106+shellybotmoyer@users.noreply.github.com": "shellybotmoyer",
     "33156212+ether-btc@users.noreply.github.com": "ether-btc",  # PR #26632 (memory provider whitespace guard)
     "Bloomtonjovish@gmail.com": "LifeJiggy",  # PR #26516 (paste collapse logging)
+    "153416856+Minksgo@users.noreply.github.com": "Minksgo",  # PR #29809 (provider precedence idea; #29285)
     "141562589+LifeJiggy@users.noreply.github.com": "LifeJiggy",
     "192385615+LifeJiggy@users.noreply.github.com": "LifeJiggy",  # stale salvage commit alias (PR #28315)
     "beastant1@gmail.com": "nekwo",  # PR #26481 (PS5.1 UTF-8 BOM)
