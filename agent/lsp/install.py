@@ -37,6 +37,8 @@ from typing import Any, Dict, Optional
 
 from hermes_constants import find_node_executable
 
+from hermes_cli._subprocess_compat import windows_batch_command
+
 logger = logging.getLogger("agent.lsp.install")
 
 # Package-name → install-strategy hint registry.  Each entry is a
@@ -290,7 +292,10 @@ def _install_npm(
     peer deps that npm doesn't auto-pull (typescript-language-server
     needs ``typescript`` next to it; intelephense ships standalone).
     """
-    npm = find_node_executable("npm")
+    # Native Windows needs the shared resolver so PATH cannot hand us an
+    # extensionless POSIX shim. Preserve the established PATH lookup on
+    # Linux/macOS instead of preferring a Hermes-managed Node installation.
+    npm = find_node_executable("npm") if _is_windows() else shutil.which("npm")
     if npm is None:
         logger.info("[install] cannot install %s: npm not on PATH", pkg)
         return None
@@ -302,13 +307,38 @@ def _install_npm(
             staging,
             " ".join(install_targets),
         )
+        command = [
+            npm,
+            "install",
+            "--prefix",
+            str(staging),
+            "--silent",
+            "--no-fund",
+            "--no-audit",
+            *install_targets,
+        ]
+        run_env = None
+        run_shell = False
+        run_command = command
+        if _is_windows() and npm.lower().endswith((".cmd", ".bat")):
+            # Batch launchers are reparsed by cmd.exe. Keep metacharacters in
+            # HERMES_HOME and package arguments inside quoted placeholders.
+            run_env = dict(os.environ)
+            run_command = windows_batch_command(
+                command,
+                run_env,
+                prefix="HERMES_LSP_INSTALL",
+            )
+            run_shell = True
         proc = subprocess.run(
-            [npm, "install", "--prefix", str(staging), "--silent", "--no-fund", "--no-audit", *install_targets],
+            run_command,
             check=False,
             capture_output=True,
             text=True,
             timeout=300,
             stdin=subprocess.DEVNULL,
+            env=run_env,
+            shell=run_shell,
         )
         if proc.returncode != 0:
             logger.warning(

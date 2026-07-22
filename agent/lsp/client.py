@@ -69,6 +69,7 @@ from agent.lsp.protocol import (
     make_response,
     read_message,
 )
+from hermes_cli._subprocess_compat import windows_batch_command
 
 logger = logging.getLogger("agent.lsp.client")
 
@@ -317,12 +318,15 @@ class LSPClient:
             raise
 
     @staticmethod
-    def _win_wrap_cmd(cmd: List[str]) -> List[str]:
-        """On Windows, wrap .cmd/.bat shims so CreateProcess can run them."""
-        exe = cmd[0]
-        if exe.lower().endswith((".cmd", ".bat")):
-            return ["cmd.exe", "/c", *cmd]
-        return cmd
+    def _win_shell_command(cmd: List[str], env: Dict[str, str]) -> str:
+        """Build a safely quoted command for a Windows batch launcher.
+
+        ``cmd.exe`` treats characters such as ``&`` as operators even when
+        Python passes arguments as a list. Put each argument in the child
+        environment and expand it inside quotes so valid Windows paths and
+        arguments containing shell metacharacters retain their identity.
+        """
+        return windows_batch_command(cmd, env, prefix="HERMES_LSP_COMMAND")
 
     async def _spawn(self) -> None:
         env = dict(os.environ)
@@ -330,8 +334,9 @@ class LSPClient:
             env.update(self._env)
 
         cmd = self._command
-        if sys.platform == "win32":
-            cmd = self._win_wrap_cmd(cmd)
+        use_windows_shell = sys.platform == "win32" and cmd[0].lower().endswith(
+            (".cmd", ".bat")
+        )
 
         try:
             # start_new_session=True detaches the LSP server into its own
@@ -341,16 +346,23 @@ class LSPClient:
             # gateway's child set, it captures the LSP PID, records the
             # inherited pgid, and killpg() then kills the TUI parent itself.
             # See tui_gateway_crash.log "killpg → SIGTERM received" stacks.
-            self._proc = await asyncio.create_subprocess_exec(
-                cmd[0],
-                *cmd[1:],
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                cwd=self._cwd,
-                start_new_session=True,
-            )
+            spawn_kwargs = {
+                "stdin": asyncio.subprocess.PIPE,
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+                "env": env,
+                "cwd": self._cwd,
+                "start_new_session": True,
+            }
+            if use_windows_shell:
+                command_line = self._win_shell_command(cmd, env)
+                self._proc = await asyncio.create_subprocess_shell(
+                    command_line, **spawn_kwargs
+                )
+            else:
+                self._proc = await asyncio.create_subprocess_exec(
+                    cmd[0], *cmd[1:], **spawn_kwargs
+                )
         except FileNotFoundError as e:
             raise LSPProtocolError(
                 f"LSP server binary not found: {cmd[0]} ({e})"

@@ -14,7 +14,10 @@ Covers:
 """
 from __future__ import annotations
 
+import asyncio
 import io
+import os
+import subprocess
 from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
@@ -195,11 +198,88 @@ def test_non_windows_candidates_preserve_extensionless_launcher(monkeypatch):
     assert install_mod._native_binary_candidates(base) == [base]
 
 
-def test_windows_npm_wrapper_runs_through_cmd_exe():
+def test_windows_npm_wrapper_uses_quoted_shell_placeholders():
     from agent.lsp.client import LSPClient
 
     command = [r"C:\Hermes\lsp\node_modules\.bin\pyright-langserver.cmd", "--stdio"]
-    assert LSPClient._win_wrap_cmd(command) == ["cmd.exe", "/c", *command]
+    env = {}
+
+    assert LSPClient._win_shell_command(command, env) == (
+        '"%HERMES_LSP_COMMAND_0%" "%HERMES_LSP_COMMAND_1%"'
+    )
+    assert env["HERMES_LSP_COMMAND_0"] == command[0]
+    assert env["HERMES_LSP_COMMAND_1"] == command[1]
+
+
+@pytest.mark.asyncio
+async def test_spawn_routes_windows_batch_launcher_through_shell(
+    tmp_path, monkeypatch
+):
+    from agent.lsp import client as client_mod
+
+    captured = {}
+
+    class FakeProcess:
+        stdout = None
+        stderr = None
+
+    async def fake_shell(command_line, **kwargs):
+        captured["command_line"] = command_line
+        captured["kwargs"] = kwargs
+        return FakeProcess()
+
+    async def unexpected_exec(*_args, **_kwargs):
+        pytest.fail("Windows batch launcher bypassed create_subprocess_shell")
+
+    monkeypatch.setattr(client_mod.sys, "platform", "win32")
+    monkeypatch.setattr(client_mod.asyncio, "create_subprocess_shell", fake_shell)
+    monkeypatch.setattr(client_mod.asyncio, "create_subprocess_exec", unexpected_exec)
+    wrapper = tmp_path / "a&b" / "server.cmd"
+    client = client_mod.LSPClient(
+        server_id="test",
+        workspace_root=str(tmp_path),
+        command=[str(wrapper), "--stdio"],
+    )
+
+    await client._spawn()
+    assert client._stderr_task is not None
+    assert client._reader_task is not None
+    await asyncio.gather(client._stderr_task, client._reader_task)
+
+    assert captured["command_line"] == (
+        '"%HERMES_LSP_COMMAND_0%" "%HERMES_LSP_COMMAND_1%"'
+    )
+    assert captured["kwargs"]["env"]["HERMES_LSP_COMMAND_0"] == str(wrapper)
+    assert captured["kwargs"]["env"]["HERMES_LSP_COMMAND_1"] == "--stdio"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows cmd.exe quoting")
+def test_windows_npm_wrapper_handles_shell_metacharacters(tmp_path):
+    """A valid wrapper path containing ``&`` must not be split by cmd.exe."""
+    from agent.lsp.client import LSPClient
+
+    wrapper = tmp_path / "a&b%UNEXPANDED%" / "server.cmd"
+    wrapper.parent.mkdir()
+    wrapper.write_text(
+        "@echo off" + chr(13) + chr(10) + "echo READY [%1]" + chr(13) + chr(10)
+    )
+    env = dict(os.environ)
+    env["UNEXPANDED"] = "wrong"
+    command_line = LSPClient._win_shell_command(
+        [str(wrapper), "hello&%UNEXPANDED%"], env
+    )
+
+    result = subprocess.run(
+        command_line,
+        shell=True,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert 'READY ["hello&%UNEXPANDED%"]' in result.stdout
 
 
 def test_install_npm_uses_native_windows_wrapper_in_place(tmp_path, monkeypatch):
@@ -228,6 +308,70 @@ def test_install_npm_uses_native_windows_wrapper_in_place(tmp_path, monkeypatch)
 
     assert resolved == str(npm_bin / "pyright-langserver.cmd")
     assert not (install_mod.hermes_lsp_bin_dir() / "pyright-langserver.cmd").exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows cmd.exe quoting")
+def test_install_npm_handles_metacharacters_in_hermes_home(tmp_path, monkeypatch):
+    """npm.cmd must receive the complete --prefix path through cmd.exe."""
+    home = tmp_path / "home&b%UNEXPANDED%"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("UNEXPANDED", "wrong")
+
+    from agent.lsp import install as install_mod
+
+    fake_npm = home / "node" / "npm.cmd"
+    fake_npm.parent.mkdir(parents=True)
+    fake_npm.write_text(
+        os.linesep.join(
+            [
+                "@echo off",
+                'if "%~1"=="--version" (',
+                "    echo 1.0.0",
+                "    exit /b 0",
+                ")",
+                'set "prefix=%~3"',
+                r'if not exist "%prefix%\node_modules\.bin" mkdir "%prefix%\node_modules\.bin"',
+                r'> "%prefix%\node_modules\.bin\pyright-langserver.cmd" echo @echo off',
+                "exit /b 0",
+            ]
+        )
+        + os.linesep
+    )
+    monkeypatch.setattr(install_mod, "_is_windows", lambda: True)
+
+    resolved = install_mod._install_npm("fake-package", "pyright-langserver")
+
+    expected = home / "lsp" / "node_modules" / ".bin" / "pyright-langserver.cmd"
+    assert resolved == str(expected)
+    assert expected.exists()
+
+
+def test_install_npm_preserves_path_lookup_off_windows(tmp_path, monkeypatch):
+    """Linux/macOS keep using PATH npm instead of the Windows resolver."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+
+    from agent.lsp import install as install_mod
+
+    captured = {}
+
+    def fake_run(cmd, **_kwargs):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0, stderr="")
+
+    def unexpected_windows_resolver(_name):
+        pytest.fail("non-Windows npm install used the Windows-safe resolver")
+
+    monkeypatch.setattr(install_mod, "_is_windows", lambda: False)
+    monkeypatch.setattr(
+        install_mod.shutil,
+        "which",
+        lambda name: "/usr/bin/npm" if name == "npm" else None,
+    )
+    monkeypatch.setattr(install_mod, "find_node_executable", unexpected_windows_resolver)
+    monkeypatch.setattr(install_mod.subprocess, "run", fake_run)
+
+    assert install_mod._install_npm("pyright", "pyright-langserver") is None
+    assert captured["cmd"][0] == "/usr/bin/npm"
 
 
 def test_install_pip_finds_windows_scripts_launcher(tmp_path, monkeypatch):
